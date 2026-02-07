@@ -1,6 +1,0 @@
-[submodule "src/backbones/MEGraphAU"]
-	path = src/backbones/MEGraphAU
-	url = https://github.com/CVI-SZU/ME-GraphAU.git
-[submodule "src/backbones/rPPGToolbox"]
-	path = src/backbones/rPPGToolbox
-	url = https://github.com/ubicomplab/rPPG-Toolbox
