@@ -1,0 +1,25 @@
+model:
+  extractors:
+    audio_encoder:
+      name: facebook/hubert-base-ls960
+      sample_rate: 16000
+    video_encoder:
+      name: MCG-NJU/videomae-base
+      num_frames: 16
+    fau_encoder:
+      name: ME-GraphAU
+      backbone: resnet50
+      num_classes: 12
+      embed_dim: 512
+      ckp_path: ./src/backbones/MEGraphAU/checkpoints/MEFARG_resnet50_DISFA_fold2.pth
+
+  pre_backbone_par:
+    embed_dim: 768
+    q_num_latents: 64
+
+
+train:
+  batch_size: 16
+
+
+
