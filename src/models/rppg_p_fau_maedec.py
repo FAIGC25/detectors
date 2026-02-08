@@ -18,7 +18,6 @@ class DeepfakeDetector(nn.Module):
                  num_au_classes: int = 8,
                  au_ckpt_path: str | None = './src/backbones/MEGraphAU/checkpoints/MEFARG_resnet50_DISFA_fold2.pth',
                  phys_ckpt_path: str | None = './src/backbones/rPPGToolbox/final_model_release/PURE_PhysNet_DiffNormalized.pth',
-                 embed_dim: int = 512,
                  num_queries: int = 32,
                  num_classes: int = 2,
                  dropout:int = 0.1,
@@ -39,17 +38,16 @@ class DeepfakeDetector(nn.Module):
             peft_config = LoraConfig(**lora_cfg)
             self.model = get_peft_model(self.videomae, peft_config)
 
-        self.mae_proj = nn.Linear(self.videomae.config.hidden_size, embed_dim)
-        self.au_proj = nn.Linear(self.au_encoder.out_channels, embed_dim)
-        self.phys_proj = nn.Linear(self.phys_encoder.out_channels, embed_dim)
-        self.segment_embed = nn.Embedding(3, embed_dim)
+        self.au_proj = nn.Linear(self.au_encoder.out_channels, self.videomae.config.hidden_size)
+        self.phys_proj = nn.Linear(self.phys_encoder.out_channels, self.videomae.config.hidden_size)
+        self.segment_embed = nn.Embedding(2, self.videomae.config.hidden_size)
 
-        self.pos = PositionalEncoding(embed_dim)
-        self.query_embed = nn.Parameter(torch.randn(1, num_queries, embed_dim))
+        self.pos = PositionalEncoding(self.videomae.config.hidden_size)
+        self.query_embed = nn.Parameter(torch.randn(1, num_queries, self.videomae.config.hidden_size))
 
-        self.norm = nn.LayerNorm(embed_dim)
+        self.norm = nn.LayerNorm(self.videomae.config.hidden_size)
         self.dropout = nn.Dropout(dropout)
-        self.classifier = nn.Linear(embed_dim, num_classes)
+        self.classifier = nn.Linear(self.videomae.config.hidden_size, num_classes)
 
 
     def forward(self, x_video):
@@ -59,23 +57,20 @@ class DeepfakeDetector(nn.Module):
         B, C, T, H, W = x_video.shape
         device = x_video.device
 
-        base_model = self.videomae.base_model.model
-        video_embeddings = base_model.embeddings(x_video)
-        video_embeddings = video_embeddings + self.segment_embed(torch.tensor(0, device=device))
-
         x_au_input = x_video.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
         au_raw = self.au_encoder(x_au_input)
-        au_raw = au_raw.view(B, T, -1)
         tokens_au = self.au_proj(au_raw)
-        tokens_au = tokens_au + self.segment_embed(torch.tensor(1, device=device))
+        tokens_au = tokens_au.view(B, T, -1, tokens_au.shape[-1]).flatten(1,2)
+
+        tokens_au = tokens_au + self.segment_embed(torch.tensor(0, device=device))
 
         _, phys_raw = self.phys_encoder(x_video)
         tokens_phys = self.phys_proj(phys_raw)
-        tokens_phys = tokens_phys + self.segment_embed(torch.tensor(2, device=device))
+        tokens_phys = tokens_phys + self.segment_embed(torch.tensor(1, device=device))
 
-        combined_embeddings = torch.cat([video_embeddings, tokens_au, tokens_phys], dim=1)
+        combined_embeddings = torch.cat([tokens_au, tokens_phys], dim=1)
 
-        encoder_outputs = base_model.encoder(combined_embeddings)
+        encoder_outputs = self.videomae.encoder(combined_embeddings)
         last_hidden_state = encoder_outputs.last_hidden_state
         features = torch.mean(last_hidden_state, dim=1)
         logits = self.classifier(self.dropout(self.norm(features)))
