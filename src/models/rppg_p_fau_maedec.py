@@ -36,7 +36,7 @@ class DeepfakeDetector(nn.Module):
         self.videomae = VideoMAEModel.from_pretrained(videomae_model_name)
         if lora_cfg:
             peft_config = LoraConfig(**lora_cfg)
-            self.model = get_peft_model(self.videomae, peft_config)
+            self.videomae = get_peft_model(self.videomae, peft_config)
 
         self.au_proj = nn.Linear(self.au_encoder.out_channels, self.videomae.config.hidden_size)
         self.phys_proj = nn.Linear(self.phys_encoder.out_channels, self.videomae.config.hidden_size)
@@ -63,11 +63,11 @@ class DeepfakeDetector(nn.Module):
         tokens_au = tokens_au.view(B, T, -1, tokens_au.shape[-1]).flatten(1,2)
 
         tokens_au = tokens_au + self.segment_embed(torch.tensor(0, device=device))
-
+        tokens_au = self.pos(tokens_au)
         _, phys_raw = self.phys_encoder(x_video)
         tokens_phys = self.phys_proj(phys_raw)
         tokens_phys = tokens_phys + self.segment_embed(torch.tensor(1, device=device))
-
+        tokens_phys = self.pos(tokens_phys)
         combined_embeddings = torch.cat([tokens_au, tokens_phys], dim=1)
 
         encoder_outputs = self.videomae.encoder(combined_embeddings)
@@ -90,6 +90,7 @@ if __name__ == '__main__':
         )
         dummy_input = torch.randn(2, 3, 16, 224, 224)
         print("Запуск forward pass с VideoMAE-LoRA в роли декодера...")
+        print(model)
         output = model(dummy_input)
         print(f"✅ Успех! Логиты: {output.shape}")
     except Exception as e:
