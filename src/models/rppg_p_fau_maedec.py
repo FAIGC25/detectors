@@ -1,5 +1,5 @@
 # ====================================================================================================================
-# VideoMAe as Decoder for FAU and rPPG features and Learnable Q-vector
+# VideoMAe as Decoder for FAU and rPPG features
 # ====================================================================================================================
 
 
@@ -18,7 +18,6 @@ class DeepfakeDetector(nn.Module):
                  num_au_classes: int = 8,
                  au_ckpt_path: str | None = './src/backbones/MEGraphAU/checkpoints/MEFARG_resnet50_DISFA_fold2.pth',
                  phys_ckpt_path: str | None = './src/backbones/rPPGToolbox/final_model_release/PURE_PhysNet_DiffNormalized.pth',
-                 num_queries: int = 32,
                  num_classes: int = 2,
                  dropout:int = 0.1,
                  lora_cfg: dict | None = None):
@@ -43,7 +42,6 @@ class DeepfakeDetector(nn.Module):
         self.segment_embed = nn.Embedding(2, self.videomae.config.hidden_size)
 
         self.pos = PositionalEncoding(self.videomae.config.hidden_size)
-        self.query_embed = nn.Parameter(torch.randn(1, num_queries, self.videomae.config.hidden_size))
 
         self.norm = nn.LayerNorm(self.videomae.config.hidden_size)
         self.dropout = nn.Dropout(dropout)
