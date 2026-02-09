@@ -11,13 +11,15 @@ import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
 
-models_dir = os.path.expanduser('checkpoints')
+current_dir = os.path.dirname(os.path.abspath(__file__))
+checkpoints_path = os.path.join(current_dir, '..', 'checkpoints')
+models_dir = os.path.normpath(checkpoints_path)
+
 model_name = {
     'swin_transformer_tiny': 'swin_tiny_patch4_window7_224.pth',
     'swin_transformer_small': 'swin_small_patch4_window7_224.pth',
     'swin_transformer_base': 'swin_base_patch4_window7_224.pth',
 }
-
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
