@@ -15,7 +15,7 @@ from peft import LoraConfig, get_peft_model
 class DeepfakeDetector(nn.Module):
     def __init__(self,
                  videomae_model_name: str ='MCG-NJU/videomae-base',
-                 backbone_fau: str = 'resnet50',
+                 backbone_fau: str = 'swin_transformer_tiny',
                  num_au_classes: int = 8,
                  au_ckpt_path: str | None = './src/backbones/MEGraphAU/checkpoints/MEFARG_swin_tiny_BP4D_fold1.pth',
                  phys_ckpt_path: str | None = './src/backbones/rPPGToolbox/final_model_release/PURE_PhysNet_DiffNormalized.pth',
