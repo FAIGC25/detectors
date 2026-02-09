@@ -20,8 +20,8 @@ WEIGHTS_DB = {
     "fau-bp4d": {
         "resnet50": "1EiQd6q7x1bEO6JBLi3s2y5348EuVdP3L",
         "resnet101": "1Ti0auMA5o94toJfszuHoMlSlWUumm9L8",
-        "swin-tiny": "1i-ra0dtoEhwIep6goZ55PvEgwE3kecbl",
-        "swin-small": "1BT4n7_5Wr6bGxHWVf3WrT7uBT0Zg9B5c",
+        "swin-tiny": "1BT4n7_5Wr6bGxHWVf3WrT7uBT0Zg9B5c",
+        "swin-small": "1EiQd6q7x1bEO6JBLi3s2y5348EuVdP3L",
         "swin-base": "1gYVHRjIj6ounxtTdXMje4WNHFMfCTVF9",
     },
     "fau-disfa": {
