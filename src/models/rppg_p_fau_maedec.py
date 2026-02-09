@@ -9,6 +9,7 @@ from transformers import VideoMAEModel
 from src.backbones.fau_encoder import FAUEncoder
 from src.backbones.rppg_encoder import RPPGEncoder
 from src.backbones.pos import PositionalEncoding
+from src.pooler.attn_pooler import AttentionPooler
 from peft import LoraConfig, get_peft_model
 
 class DeepfakeDetector(nn.Module):
@@ -16,7 +17,7 @@ class DeepfakeDetector(nn.Module):
                  videomae_model_name: str ='MCG-NJU/videomae-base',
                  backbone_fau: str = 'resnet50',
                  num_au_classes: int = 8,
-                 au_ckpt_path: str | None = './src/backbones/MEGraphAU/checkpoints/MEFARG_resnet50_DISFA_fold2.pth',
+                 au_ckpt_path: str | None = './src/backbones/MEGraphAU/checkpoints/MEFARG_swin_tiny_BP4D_fold1.pth',
                  phys_ckpt_path: str | None = './src/backbones/rPPGToolbox/final_model_release/PURE_PhysNet_DiffNormalized.pth',
                  num_classes: int = 2,
                  dropout:int = 0.1,
@@ -46,9 +47,10 @@ class DeepfakeDetector(nn.Module):
         self.norm = nn.LayerNorm(self.videomae.config.hidden_size)
         self.dropout = nn.Dropout(dropout)
         self.classifier = nn.Linear(self.videomae.config.hidden_size, num_classes)
+        self.attn_pooler = AttentionPooler(self.videomae.config.hidden_size)
 
 
-    def forward(self, x_video):
+    def forward(self, x_video, return_attention=False):
         """
         x_video: [B, 3, T=16, 224, 224]
         """
@@ -70,8 +72,11 @@ class DeepfakeDetector(nn.Module):
 
         encoder_outputs = self.videomae.encoder(combined_embeddings)
         last_hidden_state = encoder_outputs.last_hidden_state
-        features = torch.mean(last_hidden_state, dim=1)
+        #features = torch.mean(last_hidden_state, dim=1)
+        features, attn_weights = self.attn_pooler(last_hidden_state)
         logits = self.classifier(self.dropout(self.norm(features)))
+        if return_attention:
+            return logits, attn_weights
         return logits
 
 if __name__ == '__main__':
