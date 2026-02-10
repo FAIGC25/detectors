@@ -606,7 +606,8 @@ def swin_transformer_tiny(pretrained=True, **kwargs):
     model = SwinTransformer(embed_dim=96,depths=[2, 2, 6, 2], num_heads=[3, 6, 12, 24],
                  window_size=7,drop_path_rate=0.2, **kwargs)
     if pretrained:
-        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['swin_transformer_tiny']))['model'])
+        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['swin_transformer_tiny']),
+                                         map_location='cuda' if torch.cuda.is_available() else 'cpu')['model'], strict=False)
     return model
 
 

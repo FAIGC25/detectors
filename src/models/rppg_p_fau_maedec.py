@@ -74,6 +74,7 @@ class DeepfakeDetector(nn.Module):
         last_hidden_state = encoder_outputs.last_hidden_state
         #features = torch.mean(last_hidden_state, dim=1)
         features, attn_weights = self.attn_pooler(last_hidden_state)
+
         logits = self.classifier(self.dropout(self.norm(features)))
         if return_attention:
             return logits, attn_weights
@@ -84,7 +85,7 @@ if __name__ == '__main__':
     try:
         model = DeepfakeDetector(
             videomae_model_name='MCG-NJU/videomae-base',
-            num_au_classes=8,
+            num_au_classes=12,
             lora_cfg={"inference_mode":False,
             'r':8,
             "lora_alpha":32,
