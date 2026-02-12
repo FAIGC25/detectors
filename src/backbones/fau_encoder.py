@@ -3,6 +3,7 @@ from src.backbones.MEGraphAU.model.ANFL import MEFARG as ANFARG
 import torch
 import os
 import torch.nn as nn
+import torch.nn.functional as F
 
 class FAUEncoderANFL(ANFARG):
     def __init__(self, num_classes=12, backbone='swin_transformer_base',neighbor_num=4, metric='dots'):
@@ -64,7 +65,16 @@ class FAUEncoder(MEFARG):
         f_e = self.head.edge_extractor(f_u, x)
         f_e = f_e.mean(dim=-2)
         f_v, f_e = self.head.gnn(f_v, f_e)
-        return f_v
+
+        b, n, c = f_v.shape
+        sc = self.head.sc
+        sc = self.head.relu(sc)
+        sc = F.normalize(sc, p=2, dim=-1)
+        cl = F.normalize(f_v, p=2, dim=-1)
+        cl = (cl * sc.view(1, n, c)).sum(dim=-1, keepdim=False)
+        cl_edge = self.head.edge_fc(f_e)
+        return f_v, cl, cl_edge
+
 
 if __name__ == '__main__':
 

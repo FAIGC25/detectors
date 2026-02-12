@@ -22,9 +22,11 @@ class DeepfakeDetector(nn.Module):
                  phys_ckpt_path: str = None,
                  num_classes: int = 2,
                  dropout: float = 0.1,
+                 temperature: float = 0.07,
                  lora_cfg: dict = None):
         super().__init__()
 
+        self.temperature = temperature
         self.au_encoder = FAUEncoder(num_classes=num_au_classes, backbone=backbone_fau)
         if au_ckpt_path:
             print(f"Loading AU Checkpoint: {au_ckpt_path}")
@@ -57,7 +59,14 @@ class DeepfakeDetector(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.classifier = nn.Linear(hidden_size, num_classes)
 
-    def forward(self, x_video, return_attention=False):
+        self.consistency_proj = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size),
+            nn.LayerNorm(hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size)
+        )
+
+    def forward(self, x_video, return_info_nce=False):
         """
         x_video: [B, 3, T=16, 224, 224]
         """
@@ -65,7 +74,7 @@ class DeepfakeDetector(nn.Module):
         device = x_video.device
 
         x_au_input = x_video.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
-        au_raw = self.au_encoder(x_au_input)
+        au_raw, cl, cl_edge= self.au_encoder(x_au_input)
         tokens_au = self.au_proj(au_raw)
 
         tokens_au = tokens_au.view(B, T, -1, tokens_au.shape[-1])
@@ -78,7 +87,7 @@ class DeepfakeDetector(nn.Module):
 
         tokens_au = tokens_au.flatten(1, 2)
 
-        _, phys_raw = self.phys_encoder(x_video)
+        rPPG, phys_raw = self.phys_encoder(x_video)
         tokens_phys = self.phys_proj(phys_raw)
         tokens_phys = self.pos(tokens_phys)
         tokens_phys = tokens_phys + self.segment_embed(torch.tensor(1, device=device))
@@ -88,8 +97,18 @@ class DeepfakeDetector(nn.Module):
         last_hidden_state = outputs.last_hidden_state
         features, attn_weights = self.attn_pooler(last_hidden_state)
         logits = self.classifier(self.dropout(self.norm(features)))
-        if return_attention:
-            return logits, attn_weights
+
+        if return_info_nce:
+            keys = self.consistency_proj(combined_embeddings)
+
+            keys_norm = F.normalize(keys, p=2, dim=2)
+            query_norm = F.normalize(features, p=2, dim=1).unsqueeze(2)
+            nce_logits = torch.bmm(keys_norm, query_norm).squeeze(2)
+            nce_logits = nce_logits / self.temperature
+            return {"logits": logits, "nce_logits": nce_logits,
+                    "attn_weights": attn_weights,
+                    "au_embeddings": tokens_au.detach(), "phys_embeddings": tokens_phys.detach(),
+                    "au_logits": cl.detach(), "rPPG": rPPG.detach()}
         return logits
 
 # === ЗАПУСК ===
@@ -111,10 +130,12 @@ if __name__ == '__main__':
 
         dummy_input = torch.randn(2, 3, 16, 224, 224)
         print("Запуск forward pass...")
-        logits, weights = model(dummy_input, return_attention=True)
+        result = model(dummy_input, return_info_nce=True)
+        logits, attn_weights, au_embeddings, phys_embeddings,au_logits, rPPG  = (result["logits"], result["attn_weights"], result["au_embeddings"],
+         result["phys_embeddings"], result["au_logits"], result["rPPG"])
         print(f"✅ Успех!")
         print(f"Logits shape: {logits.shape} (должно быть [2, 2])")
-        print(f"Attention Weights shape: {weights.shape} (должно быть [2, Total_Tokens])")
+        print(f"Attention Weights shape: {attn_weights.shape} (должно быть [2, Total_Tokens])")
     except Exception as e:
         print(f"❌ Ошибка: {e}")
         import traceback
