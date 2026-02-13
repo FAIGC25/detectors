@@ -1,25 +1,32 @@
-model:
-  extractors:
-    audio_encoder:
-      name: facebook/hubert-base-ls960
-      sample_rate: 16000
-    video_encoder:
-      name: MCG-NJU/videomae-base
-      num_frames: 16
-    fau_encoder:
-      name: ME-GraphAU
-      backbone: resnet50
-      num_classes: 12
-      embed_dim: 512
-      ckp_path: ./src/backbones/MEGraphAU/checkpoints/MEFARG_resnet50_DISFA_fold2.pth
+model_params:
+  backbone_fau: swin_transformer_tiny
+  num_frames: 16
+  au_ckpt_path: ./src/backbones/MEGraphAU/checkpoints/MEFARG_swin_tiny_BP4D_fold1.pth
+  phys_ckpt_path: ./src/backbones/rPPGToolbox/final_model_release/PURE_PhysNet_DiffNormalized.pth
+  num_classes: 2
+  dropout: 0.1
+  temperature: 0.07
+  videomae_model_name: MCG-NJU/videomae-base
+  num_au_classes: 12
+  lora_cfg:
+    inference_mode: false
+    r: 8
+    lora_alpha: 32
+    lora_dropout: 0.1
+    target_modules:
+    - query
+    - value
+    - key
 
-  pre_backbone_par:
-    embed_dim: 768
-    q_num_latents: 64
+train_params:
+  lr: 0.0001
+  weight_decay: 0.0001
+  T_max: 10
+  lambda_nce: 0.5
+  num_classes: 2
 
 
-train:
-  batch_size: 16
-
-
-
+trainer_params:
+  max_epochs: 50
+  accumulate_grad_batches: 2
+  accelerator: auto
