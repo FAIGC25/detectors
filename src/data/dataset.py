@@ -144,116 +144,87 @@ class VideoFolderDataset_OLD(Dataset):
 
 
 class VideoFolderDataset(Dataset):
-    """
-    Dataset for FF++, CelebDF, etc.
-    Reads video files and returns a CONSECUTIVE sequence of frames.
-    Critical for rPPG signal extraction.
-    """
-    def __init__(self,
-                 root_dir,
-                 transform=None,
-                 mode='train',
-                 valid_extensions=('.mp4', '.avi', '.mov', '.mkv'),
-                 frames_per_video=32):
-
+    def __init__(self, root_dir, transform=None, valid_extensions=('.mp4', '.avi', '.mov', '.mkv'), frames_per_video=32):
         self.root_dir = root_dir
         self.transform = transform
-        self.mode = mode
         self.valid_extensions = valid_extensions
         self.frames_per_video = frames_per_video
-
+        
         self.samples = []
         self.classes = []
         self.class_to_idx = {}
 
         if not os.path.exists(root_dir):
-            raise FileNotFoundError(f"Folder {root_dir} not found")
+            raise FileNotFoundError(f"Folder {root_dir} not found")      
         subdirs = sorted([d for d in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, d))])
         for idx, class_name in enumerate(subdirs):
             self.classes.append(class_name)
             self.class_to_idx[class_name] = idx
             class_folder = os.path.join(root_dir, class_name)
-
+            
             for root, _, files in os.walk(class_folder):
                 for file in files:
                     if file.lower().endswith(self.valid_extensions):
                         path = os.path.join(root, file)
                         self.samples.append((path, idx))
 
-        print(f"[{self.mode.upper()}] Found {len(self.samples)} videos in {len(self.classes)} classes: {self.class_to_idx}")
+        print(f"Found {len(self.samples)} videos in {root_dir}")
 
     def __len__(self):
         return len(self.samples)
 
     def _get_dummy_video(self):
-        """Возвращает черный квадрат, если видео битое"""
         return [Image.new('RGB', (224, 224)) for _ in range(self.frames_per_video)]
 
     def _load_video(self, path):
-        """
-        Читает self.frames_per_video кадров ПОДРЯД.
-        """
         cap = cv2.VideoCapture(path)
-
+        
         if not cap.isOpened():
-            print(f"❌ ERROR: Cannot open {path}")
+            print(f"Error opening {path}")
             return self._get_dummy_video()
 
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
         if total_frames <= 0:
             cap.release()
             return self._get_dummy_video()
 
-        # === ЛОГИКА ВЫБОРА НАЧАЛА (Temporal Sampling) ===
         clip_len = self.frames_per_video
-
+        
         if total_frames > clip_len:
-            if self.mode == 'train':
-                # Для обучения: случайное начало (Augmentation)
-                start_frame = np.random.randint(0, total_frames - clip_len)
-            else:
-                start_frame = (total_frames - clip_len) // 2
+            start_frame = np.random.randint(0, total_frames - clip_len)
         else:
-
             start_frame = 0
 
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-
+        
         frames = []
         for _ in range(clip_len):
             ret, frame = cap.read()
             if ret:
-
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frames.append(Image.fromarray(frame))
             else:
-
                 break
-
         cap.release()
 
+        if len(frames) == 0: return self._get_dummy_video()
 
-        if len(frames) == 0:
-            return self._get_dummy_video()
-
+        original_len = len(frames)
         while len(frames) < clip_len:
-            frames.append(frames[len(frames) % len(frames)])
-
+            frames.append(frames[len(frames) % original_len])
+            
         return frames[:clip_len]
 
     def __getitem__(self, idx):
         path, label = self.samples[idx]
-
         try:
             frames = self._load_video(path)
         except Exception as e:
-            print(f"🔥 Critical Error loading {path}: {e}")
             frames = self._get_dummy_video()
 
         if self.transform:
             frames = [self.transform(img) for img in frames]
-
+            
         video_tensor = torch.stack(frames)
         return video_tensor.permute(1, 0, 2, 3), label
 
