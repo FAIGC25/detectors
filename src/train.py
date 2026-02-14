@@ -75,20 +75,26 @@ def train(
     })
 
     file_config = OmegaConf.load(config_path)
-    
+
     model_cfg = file_config.model_params
     train_cfg = file_config.train_params
     trainer_cfg = file_config.trainer_params
-    
+
     final_config = OmegaConf.merge(model_cfg, default_model_cfg)
     model_cfg = OmegaConf.to_container(final_config, resolve=True)
 
-    
+
     lit_model = FauRPPGDeepFakeRecognizer(
         model_params=model_cfg,
         **train_cfg)
 
+    print("\n🔍 CHECKING TRAINABLE PARAMS:")
+    trainable_layers = []
+    for name, param in lit_model.model.named_parameters():
+        if param.requires_grad:
+            trainable_layers.append(name)
 
+    typer.echo(f"Trainable layers ({len(trainable_layers)}):")
     trainer = pl.Trainer(**trainer_cfg)
     typer.echo("🚀 Запуск обучения Lightning...")
     trainer.fit(lit_model, train_dataloaders=train_loader, val_dataloaders=val_loader)

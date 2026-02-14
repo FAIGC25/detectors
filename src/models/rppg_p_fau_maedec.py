@@ -15,11 +15,12 @@ from src.pooler.attn_pooler import AttentionPooler
 class DeepfakeDetector(nn.Module):
     def __init__(self,
                  videomae_model_name: str ='MCG-NJU/videomae-base',
-                 backbone_fau: str = 'swin_transformer_tiny', # или resnet50
+                 backbone_fau: str = 'swin_transformer_tiny',
                  num_au_classes: int = 8,
                  num_frames: int = 16,
                  au_ckpt_path: str = None,
                  phys_ckpt_path: str = None,
+                 freeze_encoders: bool = True,
                  num_classes: int = 2,
                  dropout: float = 0.1,
                  temperature: float = 0.07,
@@ -31,13 +32,15 @@ class DeepfakeDetector(nn.Module):
         if au_ckpt_path:
             print(f"Loading AU Checkpoint: {au_ckpt_path}")
             self.au_encoder.load_pretrained(au_ckpt_path)
-
+            for par in self.au_encoder.parameters():
+                par.requires_grad=False
         self.phys_encoder = RPPGEncoder(frames=num_frames)
         if phys_ckpt_path:
             print(f"Loading Phys Checkpoint: {phys_ckpt_path}")
             self.phys_encoder.load_pretrained(phys_ckpt_path)
+            for par in self.phys_encoder.parameters():
+                par.requires_grad=False
 
-        # --- BACKBONE (VideoMAE) ---
         print(f"Loading VideoMAE: {videomae_model_name}")
         self.videomae = VideoMAEModel.from_pretrained(videomae_model_name)
         if lora_cfg:
@@ -59,14 +62,8 @@ class DeepfakeDetector(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.classifier = nn.Linear(hidden_size, num_classes)
 
-        self.consistency_proj = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size),
-            nn.LayerNorm(hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size)
-        )
 
-    def forward(self, x_video, return_info_nce=False):
+    def forward(self, x_video, return_info=False):
         """
         x_video: [B, 3, T=16, 224, 224]
         """
@@ -98,14 +95,8 @@ class DeepfakeDetector(nn.Module):
         features, attn_weights = self.attn_pooler(last_hidden_state)
         logits = self.classifier(self.dropout(self.norm(features)))
 
-        if return_info_nce:
-            keys = self.consistency_proj(combined_embeddings)
-
-            keys_norm = F.normalize(keys, p=2, dim=2)
-            query_norm = F.normalize(features, p=2, dim=1).unsqueeze(2)
-            nce_logits = torch.bmm(keys_norm, query_norm).squeeze(2)
-            nce_logits = nce_logits / self.temperature
-            return {"logits": logits, "nce_logits": nce_logits,
+        if return_info:
+            return {"logits": logits,
                     "attn_weights": attn_weights,
                     "au_embeddings": tokens_au.detach(), "phys_embeddings": tokens_phys.detach(),
                     "au_logits": cl.detach(), "rPPG": rPPG.detach()}

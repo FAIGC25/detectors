@@ -5,7 +5,7 @@ model_params:
   phys_ckpt_path: ./src/backbones/rPPGToolbox/final_model_release/PURE_PhysNet_DiffNormalized.pth
   num_classes: 2
   dropout: 0.1
-  temperature: 0.07
+  temperature: 0.2
   videomae_model_name: MCG-NJU/videomae-base
   num_au_classes: 12
   lora_cfg:
@@ -22,7 +22,6 @@ train_params:
   lr: 0.0001
   weight_decay: 0.0001
   T_max: 10
-  lambda_nce: 0.5
   num_classes: 2
 
 

@@ -18,7 +18,6 @@ class FauRPPGDeepFakeRecognizer(pl.LightningModule):
         lr: float = 1e-4,
         weight_decay: float = 1e-4,
         T_max: int = 10,
-        lambda_nce: float = 0.5,
         num_classes: int = 2
     ):
         super().__init__()
@@ -46,20 +45,20 @@ class FauRPPGDeepFakeRecognizer(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, y = batch
-        output = self.model(x, return_info_nce=True)
+        output = self.model(x, return_info=True)
         logits = output["logits"]
-        nce_logits = output["nce_logits"]
+        #nce_logits = output["nce_logits"]
         attn_weights = output["attn_weights"]
 
         loss_ce = self.criterion_ce(logits, y)
 
-        loss_nce = self.criterion_nce(nce_logits, attn_weights)
+        #loss_nce = self.criterion_nce(nce_logits, attn_weights)
 
-        total_loss = loss_ce + (self.hparams.lambda_nce * loss_nce)
+        total_loss = loss_ce # + (self.hparams.lambda_nce * loss_nce)
 
         self.log("train_loss", total_loss, prog_bar=True, on_step=True, on_epoch=True)
         self.log("train_ce", loss_ce, prog_bar=False, on_step=True, on_epoch=True)
-        self.log("train_nce", loss_nce, prog_bar=False, on_step=True, on_epoch=True)
+        #self.log("train_nce", loss_nce, prog_bar=False, on_step=True, on_epoch=True)
 
         probs = F.softmax(logits, dim=1)
 
@@ -80,7 +79,7 @@ class FauRPPGDeepFakeRecognizer(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
-        output = self.model(x, return_info_nce=False)
+        output = self.model(x, return_info=False)
         logits = output
         val_loss = self.criterion_ce(logits, y)
         probs = F.softmax(logits, dim=1)
