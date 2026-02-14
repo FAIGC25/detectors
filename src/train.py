@@ -57,12 +57,11 @@ def train(
 
     default_model_cfg = OmegaConf.create({
         'backbone_fau': 'swin_transformer_tiny',
-        'num_frames':  16,
+        'num_frames':  128,
         'au_ckpt_path':  './src/backbones/MEGraphAU/checkpoints/MEFARG_swin_tiny_BP4D_fold1.pth',
         'phys_ckpt_path': './src/backbones/rPPGToolbox/final_model_release/PURE_PhysNet_DiffNormalized.pth',
         'num_classes':  2,
         'dropout':  0.1,
-        'temperature': 0.07,
         "videomae_model_name": 'MCG-NJU/videomae-base',
         "num_au_classes": 12,
         "lora_cfg": {

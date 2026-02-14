@@ -63,22 +63,22 @@ class VideoFolderDataset(Dataset):
         self.transform = transform
         self.valid_extensions = valid_extensions
         self.frames_per_video = frames_per_video
-        
+
         self.samples = []
         self.classes = []
         self.class_to_idx = {}
 
         if not os.path.exists(root_dir):
             raise FileNotFoundError(f"Folder {root_dir} not found")
-            
+
         subdirs = sorted([d for d in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, d))])
-        
+
         for idx, class_name in enumerate(subdirs):
             self.classes.append(class_name)
             self.class_to_idx[class_name] = idx
-            
+
             class_folder = os.path.join(root_dir, class_name)
-            
+
             for root, _, files in os.walk(class_folder):
                 for file in files:
                     if file.lower().endswith(self.valid_extensions):
@@ -91,24 +91,24 @@ class VideoFolderDataset(Dataset):
     def _load_video(self, path):
         cap = cv2.VideoCapture(path)
         frames = []
-        
+
         if not cap.isOpened():
             print(f"ERROR : {path}")
             return self._get_dummy_video()
 
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        
+
         if total_frames <= 0:
             cap.release()
             return self._get_dummy_video()
 
         frame_indices = np.linspace(0, total_frames - 1, self.frames_per_video, dtype=int)
-        
+
         current_frame_idx = 0
         for idx in frame_indices:
             cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
             ret, frame = cap.read()
-            
+
             if ret:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frames.append(Image.fromarray(frame))
@@ -119,7 +119,7 @@ class VideoFolderDataset(Dataset):
         cap.release()
         while len(frames) < self.frames_per_video:
             frames.append(frames[-1] if frames else Image.new('RGB', (224, 224)))
-            
+
         return frames
 
     def _get_dummy_video(self):
@@ -127,7 +127,7 @@ class VideoFolderDataset(Dataset):
 
     def __getitem__(self, idx):
         path, label = self.samples[idx]
-        
+
         try:
             frames = self._load_video(path)
         except Exception as e:
@@ -136,27 +136,145 @@ class VideoFolderDataset(Dataset):
 
         if self.transform:
             frames = [self.transform(img) for img in frames]
-            
+
         video_tensor = torch.stack(frames)
-            
+
         return video_tensor.transpose(0,1), label
+
+
+
+class VideoFolderDataset(Dataset):
+    """
+    Dataset for FF++, CelebDF, etc.
+    Reads video files and returns a CONSECUTIVE sequence of frames.
+    Critical for rPPG signal extraction.
+    """
+    def __init__(self,
+                 root_dir,
+                 transform=None,
+                 mode='train',
+                 valid_extensions=('.mp4', '.avi', '.mov', '.mkv'),
+                 frames_per_video=32):
+
+        self.root_dir = root_dir
+        self.transform = transform
+        self.mode = mode
+        self.valid_extensions = valid_extensions
+        self.frames_per_video = frames_per_video
+
+        self.samples = []
+        self.classes = []
+        self.class_to_idx = {}
+
+        if not os.path.exists(root_dir):
+            raise FileNotFoundError(f"Folder {root_dir} not found")
+        subdirs = sorted([d for d in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, d))])
+        for idx, class_name in enumerate(subdirs):
+            self.classes.append(class_name)
+            self.class_to_idx[class_name] = idx
+            class_folder = os.path.join(root_dir, class_name)
+
+            for root, _, files in os.walk(class_folder):
+                for file in files:
+                    if file.lower().endswith(self.valid_extensions):
+                        path = os.path.join(root, file)
+                        self.samples.append((path, idx))
+
+        print(f"[{self.mode.upper()}] Found {len(self.samples)} videos in {len(self.classes)} classes: {self.class_to_idx}")
+
+    def __len__(self):
+        return len(self.samples)
+
+    def _get_dummy_video(self):
+        """Возвращает черный квадрат, если видео битое"""
+        return [Image.new('RGB', (224, 224)) for _ in range(self.frames_per_video)]
+
+    def _load_video(self, path):
+        """
+        Читает self.frames_per_video кадров ПОДРЯД.
+        """
+        cap = cv2.VideoCapture(path)
+
+        if not cap.isOpened():
+            print(f"❌ ERROR: Cannot open {path}")
+            return self._get_dummy_video()
+
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        if total_frames <= 0:
+            cap.release()
+            return self._get_dummy_video()
+
+        # === ЛОГИКА ВЫБОРА НАЧАЛА (Temporal Sampling) ===
+        clip_len = self.frames_per_video
+
+        if total_frames > clip_len:
+            if self.mode == 'train':
+                # Для обучения: случайное начало (Augmentation)
+                start_frame = np.random.randint(0, total_frames - clip_len)
+            else:
+                start_frame = (total_frames - clip_len) // 2
+        else:
+
+            start_frame = 0
+
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+
+        frames = []
+        for _ in range(clip_len):
+            ret, frame = cap.read()
+            if ret:
+
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frames.append(Image.fromarray(frame))
+            else:
+
+                break
+
+        cap.release()
+
+
+        if len(frames) == 0:
+            return self._get_dummy_video()
+
+        while len(frames) < clip_len:
+            frames.append(frames[len(frames) % len(frames)])
+
+        return frames[:clip_len]
+
+    def __getitem__(self, idx):
+        path, label = self.samples[idx]
+
+        try:
+            frames = self._load_video(path)
+        except Exception as e:
+            print(f"🔥 Critical Error loading {path}: {e}")
+            frames = self._get_dummy_video()
+
+        if self.transform:
+            frames = [self.transform(img) for img in frames]
+
+        video_tensor = torch.stack(frames)
+        return video_tensor.permute(1, 0, 2, 3), label
+
+
 
 def split_dataset(dataset, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15, seed=42):
     assert abs((train_ratio + val_ratio + test_ratio) - 1.0) < 1e-5, "Need sum == 1"
-    
+
     total_size = len(dataset)
     train_size = int(total_size * train_ratio)
     val_size = int(total_size * val_ratio)
     test_size = total_size - train_size - val_size
 
     generator = torch.Generator().manual_seed(seed)
-    
+
     train_set, val_set, test_set = random_split(
-        dataset, 
+        dataset,
         [train_size, val_size, test_size],
         generator=generator
     )
-    
+
     return train_set, val_set, test_set
 
 if __name__ == "__main__":

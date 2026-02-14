@@ -20,14 +20,11 @@ class DeepfakeDetector(nn.Module):
                  num_frames: int = 16,
                  au_ckpt_path: str = None,
                  phys_ckpt_path: str = None,
-                 freeze_encoders: bool = True,
                  num_classes: int = 2,
                  dropout: float = 0.1,
-                 temperature: float = 0.07,
                  lora_cfg: dict = None):
         super().__init__()
 
-        self.temperature = temperature
         self.au_encoder = FAUEncoder(num_classes=num_au_classes, backbone=backbone_fau)
         if au_ckpt_path:
             print(f"Loading AU Checkpoint: {au_ckpt_path}")
@@ -107,7 +104,7 @@ if __name__ == '__main__':
     try:
         print("Инициализация модели...")
         # Укажи тут свои параметры
-        model = DeepfakeDetector(
+        model = DeepfakeDetector(num_frames=128,
             videomae_model_name='MCG-NJU/videomae-base',
             num_au_classes=12,
             lora_cfg={
@@ -119,9 +116,9 @@ if __name__ == '__main__':
             }
         )
 
-        dummy_input = torch.randn(2, 3, 16, 224, 224)
+        dummy_input = torch.randn(1, 3, 128, 224, 224)
         print("Запуск forward pass...")
-        result = model(dummy_input, return_info_nce=True)
+        result = model(dummy_input, return_info=True)
         logits, attn_weights, au_embeddings, phys_embeddings,au_logits, rPPG  = (result["logits"], result["attn_weights"], result["au_embeddings"],
          result["phys_embeddings"], result["au_logits"], result["rPPG"])
         print(f"✅ Успех!")
