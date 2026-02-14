@@ -5,10 +5,11 @@ from torchvision import transforms
 from torch.utils.data import DataLoader, ConcatDataset 
 import os
 import lightning as pl
-from typing import List 
+from typing import List, Optional
 from dotenv import load_dotenv
 from src.models.rppg_p_fau_lightning import FauRPPGDeepFakeRecognizer
 from src.data.dataset import VideoFolderDataset, split_dataset
+from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -28,11 +29,19 @@ def train(
         help="Пути к папкам с датасетами (можно указывать несколько раз)"
     ),
     batch_size: int = typer.Option(32, "--batch_size", "-bs",
-                                   help='Размер батча')
+                                   help='Размер батча'),
+    
+    load_from_pretrain: Optional[str] = typer.Option(None, "--load_from_pretrain", "-r", help="Путь к .ckpt файлу для возобновления")
 ):
     """
     Запуск обучения модели FauRPPGDeepFakeRecognizer на нескольких датасетах.
     """
+
+    if load_from_pretrain is not None:
+        if not os.path.exists(load_from_pretrain):
+            typer.echo(f"❌ Ошибка: Чекпоинт не найден: {load_from_pretrain}")
+            raise FileNotFoundError(load_from_pretrain)
+        typer.echo(f"🔄 Будет выполнено возобновление из: {load_from_pretrain}")
 
     if not os.path.exists(config_path):
         config_base_path = os.getenv('EXPERIMENTS_CFG_FOLDER')
@@ -119,9 +128,33 @@ def train(
             trainable_layers.append(name)
 
     typer.echo(f"Trainable layers ({len(trainable_layers)}):")
-    trainer = pl.Trainer(**trainer_cfg)
+    checkpoint_callback = ModelCheckpoint(
+        dirpath='checkpoints/',       
+        filename='best-{epoch:02d}-{val_auc:.4f}', 
+        monitor='val_auc',            
+        mode='max',                   
+        save_top_k=2,                 
+        save_last=True,               
+        verbose=True
+    )
+
+
+    early_stop_callback = EarlyStopping(
+        monitor='val_auc',
+        min_delta=0.001,              
+        patience=50,                  
+        verbose=True,
+        mode='max'
+    )
+    
+    lr_monitor = LearningRateMonitor(logging_interval='epoch')
+    callbacks = [checkpoint_callback, early_stop_callback, lr_monitor]
+    
+    trainer = pl.Trainer(callbacks=callbacks,
+                         **trainer_cfg)
     typer.echo("🚀 Запуск обучения Lightning...")
-    trainer.fit(lit_model, train_dataloaders=train_loader, val_dataloaders=val_loader)
+    trainer.fit(lit_model, train_dataloaders=train_loader, val_dataloaders=val_loader,
+                ckpt_path=load_from_pretrain)
 
 
 if __name__ == "__main__":
