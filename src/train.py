@@ -2,9 +2,10 @@ import typer
 from pathlib import Path
 from omegaconf import OmegaConf
 from torchvision import transforms
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset 
 import os
 import lightning as pl
+from typing import List 
 from dotenv import load_dotenv
 from src.models.rppg_p_fau_lightning import FauRPPGDeepFakeRecognizer
 from src.data.dataset import VideoFolderDataset, split_dataset
@@ -20,37 +21,61 @@ def train(
         "--config_name", "-c",
         help="Имя .yaml конфига (.yaml)",
     ),
+    num_workers: int = typer.Option(4, '--num_workers', "-nw",help='Кол-во воркеров для лоадеров'),
+    dataset_paths: List[str] = typer.Option(
+        ..., 
+        "--dataset_path", "-d", 
+        help="Пути к папкам с датасетами (можно указывать несколько раз)"
+    ),
     batch_size: int = typer.Option(32, "--batch_size", "-bs",
                                    help='Размер батча')
 ):
     """
-    Запуск обучения модели FauRPPGDeepFakeRecognizer.
+    Запуск обучения модели FauRPPGDeepFakeRecognizer на нескольких датасетах.
     """
 
     if not os.path.exists(config_path):
         config_base_path = os.getenv('EXPERIMENTS_CFG_FOLDER')
         typer.echo(f'[CONFIG BASE PATH] base_path={config_base_path}')
         config_path = os.path.join(config_base_path, config_path)
-        typer.echo(f'[PATH] path={config_path}')
-
+        
         if not os.path.exists(config_path):
-            raise Exception(f'Select config names from {config_base_path}. If config is not exist please make .yaml config and try again')
+            raise Exception(f'Config not found in {config_base_path}')
 
-    dataset_path = os.getenv('DATASET_PATH')
     data_transforms = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
     ])
-    full_dataset = VideoFolderDataset(dataset_path, transform=data_transforms)
 
-    typer.echo(f"Classes: {full_dataset.classes}")
-    typer.echo(f"Len images: {len(full_dataset)}")
+    all_datasets = []
+    for path in dataset_paths:
+        if os.path.exists(path):
+            typer.echo(f"📦 Загрузка датасета из: {path}")
+            ds = VideoFolderDataset(path, transform=data_transforms)
+            all_datasets.append(ds)
+        else:
+            typer.echo(f"⚠️ Путь не найден и будет пропущен: {path}")
+
+    if not all_datasets:
+        raise Exception("Ни один датасет не был загружен. Проверьте пути.")
+
+    full_dataset = ConcatDataset(all_datasets)
+    
+    base_classes = getattr(all_datasets[0], 'classes', 'Unknown')
+    typer.echo(f"Classes (from first DS): {base_classes}")
+    typer.echo(f"Total images: {len(full_dataset)}")
 
     train_ds, val_ds, test_ds = split_dataset(full_dataset, train_ratio=0.8, val_ratio=0.1, test_ratio=0.1)
-    typer.echo(f"Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
+    typer.echo(f"Split -> Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers,
+                              pin_memory=True,
+                              persistent_workers=True)
+    
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, 
+                            num_workers=num_workers,
+                            pin_memory=True,
+                            persistent_workers=True)
 
     typer.echo(f"📂 Загрузка конфигурации из: {config_path}")
 

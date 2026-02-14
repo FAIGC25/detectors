@@ -25,6 +25,7 @@ dependencies = [
     "opencv-python>=4.11.0.86",
     "omegaconf>=2.3.0",
     "python-dotenv>=1.2.1",
+    "tensorboard>=2.20.0",
 ]
 
 [build-system]

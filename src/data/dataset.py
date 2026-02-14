@@ -53,7 +53,7 @@ class RecursiveFolderDataset(Dataset):
 
 
 
-class VideoFolderDataset(Dataset):
+class VideoFolderDataset_OLD(Dataset):
     """
     Dataset for ff++ and celebDF
     Reads video files and returns a sequence of frames.
@@ -284,9 +284,8 @@ if __name__ == "__main__":
         transforms.ToTensor(),
     ])
 
-    root_path = "."
 
-    full_dataset = RecursiveFolderDataset(root_path, transform=data_transforms)
+    #full_dataset = RecursiveFolderDataset(root_path, transform=data_transforms)
 
     # print(f"Classes: {full_dataset.classes}")
     # print(f"Len images: {len(full_dataset)}")
@@ -302,7 +301,8 @@ if __name__ == "__main__":
     # print(f"Labels: {labels}")
 
 
-    root_path = "."
+    root_path = "../datasets/ff++_videous_out"
+
 
     full_dataset = VideoFolderDataset(root_path, transform=data_transforms)
 
