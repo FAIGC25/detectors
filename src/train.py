@@ -10,7 +10,7 @@ import lightning as pl
 from typing import List, Optional
 from collections import Counter
 from dotenv import load_dotenv
-from src.models.rppg_p_fau_lightning import FauRPPGDeepFakeRecognizer
+from src.models.rppg_p_fau_df_lightning import FauRPPGDeepFakeRecognizerDF
 from src.data.dataset import VideoFolderDataset, split_dataset
 from src.data.meta_dataset import MetaVideoDataset
 from src.data.transforms import VideoTransform
@@ -79,7 +79,7 @@ def train(
     load_from_pretrain: Optional[str] = typer.Option(None, "--load_from_pretrain", "-r", help="Путь к .ckpt файлу для возобновления")
 ):
     """
-    Запуск обучения модели FauRPPGDeepFakeRecognizer на нескольких датасетах.
+    Запуск обучения модели FauRPPGDeepFakeRecognizerDF на нескольких датасетах.
 
     Режим 1 (папки): -d /path1 -d /path2
     Режим 2 (CSV):   -mc train.csv -mc extra.csv
@@ -334,7 +334,7 @@ def train(
         for k, w in class_weights.items():
             typer.echo(f"   {k}: {w.numpy().round(3).tolist()}")
 
-    lit_model = FauRPPGDeepFakeRecognizer(
+    lit_model = FauRPPGDeepFakeRecognizerDF(
         model_params=model_cfg,
         class_weights=class_weights,
         **train_cfg)

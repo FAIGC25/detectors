@@ -9,7 +9,7 @@
 import torch
 import torch.nn as nn
 
-from src.backbones_df.fau_df import FAUEncoderDF
+from src.backbones.fau_encoder import FAUEncoder
 from src.backbones_df.rppg_df import RPPGEncoderDF
 from src.backbones.pos import PositionalEncoding
 from src.pooler.attn_pooler import AttentionPooler
@@ -18,9 +18,8 @@ from src.pooler.attn_pooler import AttentionPooler
 class DeepfakeDetectorDF(nn.Module):
     def __init__(
         self,
-        backbone_fau: str = "swin_transformer_base",
-        num_au_main_classes: int = 27,
-        num_au_sub_classes: int = 14,
+        backbone_fau: str = 'swin_transformer_tiny',
+        num_au_classes: int = 12,
         num_frames: int = 128,
         au_ckpt_path: str | None = None,
         phys_ckpt_path: str | None = None,
@@ -43,10 +42,9 @@ class DeepfakeDetectorDF(nn.Module):
             full_train = bool(full_train)
 
         # ── FAU branch (OpenGraphAU, frozen by default) ──────────────────
-        self.au_encoder = FAUEncoderDF(
+        self.au_encoder = FAUEncoder(
+            num_classes=num_au_classes,
             backbone=backbone_fau,
-            num_main_classes=num_au_main_classes,
-            num_sub_classes=num_au_sub_classes,
         )
         if au_ckpt_path:
             print(f"Loading AU (OpenGraphAU) Checkpoint: {au_ckpt_path}")
