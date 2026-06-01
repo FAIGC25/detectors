@@ -1,0 +1,31 @@
+model_params:
+  backbone_fau: swin_transformer_tiny
+  num_frames: 64
+  au_ckpt_path: ./src/backbones/MEGraphAU/checkpoints/MEFARG_swin_tiny_BP4D_fold1.pth
+  phys_ckpt_path: ./checkpoints/df_phys/DeepFakesON-Phys_CelebDF_V2.pth
+  num_classes: 2
+  dropout: 0.3
+  num_au_classes: 12
+  embed_dim: 512
+  num_queries: 64
+  num_decoder_layers: 6
+  nhead: 8
+  num_gender_classes: 0
+  num_ethnicity_classes: 0
+  num_emotion_classes: 0
+  full_train: true
+lr: 0.0001
+encoder_lr: 1.0e-05
+weight_decay: 0.05
+T_max: 100
+num_classes: 2
+gender_loss_weight: 0.3
+ethnicity_loss_weight: 0.3
+emotion_loss_weight: 0.3
+metric_loss_type: triplet
+metric_loss_weight: 0.2
+triplet_margin: 0.3
+supcon_temperature: 0.1
+memory_bank_size: 256
+embed_dim: 512
+embeddings_dump_dir: null
