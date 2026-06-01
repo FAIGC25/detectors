@@ -96,7 +96,7 @@ class DeepfakeDetectorDF(nn.Module):
 
         # === FAU branch (frame-level, 224×224) ===
         x_au_input = x_video.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
-        au_raw, au_logits = self.au_encoder(x_au_input)        # [B*T, 27, D_au], [B*T, 41]
+        au_raw, au_logits, _= self.au_encoder(x_au_input)        # [B*T, 27, D_au], [B*T, 41]
         tokens_au = self.au_proj(au_raw)                       # [B*T, 27, embed_dim]
 
         # Per-AU temporal positional encoding: same trick as rppg_p_fau.py —
