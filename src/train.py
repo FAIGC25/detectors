@@ -347,7 +347,7 @@ def train(
 
     typer.echo(f"Trainable layers ({len(trainable_layers)}):")
     checkpoint_callback = ModelCheckpoint(
-        dirpath='checkpoints/',
+        dirpath='model_train_checkpoints/',
         filename='best-{epoch:02d}-{val_auc:.4f}',
         monitor='val_auc',
         mode='max',
@@ -367,8 +367,7 @@ def train(
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
     callbacks = [checkpoint_callback, early_stop_callback, lr_monitor]
 
-    trainer = pl.Trainer(callbacks=callbacks,strategy="ddp_find_unused_parameters_true",
-                         **trainer_cfg)
+    trainer = pl.Trainer(callbacks=callbacks,**trainer_cfg)
     typer.echo("🚀 Запуск обучения Lightning...")
     trainer.fit(lit_model, train_dataloaders=train_loader, val_dataloaders=val_loader,
                 ckpt_path=load_from_pretrain)
