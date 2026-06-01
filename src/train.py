@@ -141,7 +141,7 @@ def train(
         'backbone_fau': 'swin_transformer_tiny',
         'num_frames':  128,
         'au_ckpt_path':  './src/backbones/MEGraphAU/checkpoints/MEFARG_swin_tiny_BP4D_fold1.pth',
-        'phys_ckpt_path': './src/backbones/rPPGToolbox/final_model_release/PURE_PhysNet_DiffNormalized.pth',
+        'phys_ckpt_path': './checkpoints/df_phys/DeepFakesON-Phys_CelebDF_V2.pth',
         'num_classes':  2,
         'dropout':  0.3,
         'num_au_classes': 12,

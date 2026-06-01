@@ -8,7 +8,8 @@ from typing import List, Optional
 from dotenv import load_dotenv
 from torch.utils.data import DataLoader, ConcatDataset, Subset
 
-from src.models.rppg_p_fau_lightning import FauRPPGDeepFakeRecognizer
+#from src.models.rppg_p_fau_lightning import FauRPPGDeepFakeRecognizer
+from src.models.rppg_p_fau_df_lightning import FauRPPGDeepFakeRecognizerDF
 from src.data.dataset import VideoFolderDataset
 from src.data.meta_dataset import MetaVideoDataset
 from src.data.transforms import VideoTransform
@@ -189,7 +190,7 @@ def evaluate(
 
     typer.echo("Загрузка чекпоинта...")
     # Старые чекпоинты могут не иметь mb_* / log_vars — грузим strict=False.
-    lit_model = FauRPPGDeepFakeRecognizer.load_from_checkpoint(
+    lit_model = FauRPPGDeepFakeRecognizerDF.load_from_checkpoint(
         ckpt_path, model_params=model_cfg, map_location="cpu", strict=False,
     )
     lit_model.eval()
