@@ -256,6 +256,64 @@ Per-class: fake acc=0.9338, f1=0.9436 | real acc=0.8924, f1=0.8711
 
 </details>
 
+## exp_120626 — DF backbones, Mix training (FAIGC + CelebDF + FF++)
+
+Checkpoint `experimental_results/exp_120626/best-epoch=08-val_auc=0.8485.ckpt`, config `src/experiments/base_config.yml` (DF backbones: DeepFakesON-Phys rPPG + ME-GraphAU swin-tiny FAU, `num_frames=64`, `num_queries=64`).
+
+Training (folder mode, random 70/15/15 split, seed=42):
+
+```bash
+uv run src/train.py -c src/experiments/base_config.yml \
+    -d ~/mnt/tank/scratch/dstoronkin/faigc_dataset/final_dataset/videos/ \
+    -d ~/mnt/tank/scratch/dstoronkin/celebdf_videos_out \
+    -d ~/mnt/tank/scratch/dstoronkin/ff++_videos_out/ \
+    -bs 4 -nw 4
+```
+
+Evaluation on the test split (`evaluate.py -d ... -s test -od {1..3}` reproduces the training split exactly — same dataset order, seed=42 — so test indices are disjoint from train), plus a **held-out set** that was never part of training (verified: zero sha256 overlap between its 53 videos and all 32,150 training videos; different source pools and generators):
+
+| Dataset | Split | N | Accuracy | F1 (macro) | AUROC | Loss |
+|---|---|---:|:---:|:---:|:---:|:---:|
+| FAIGC | test | 2107 | 0.9752 | 0.9664 | 0.9974 | 0.0758 |
+| CelebDF | test | 1590 | 0.9976 | 0.9975 | 1.0000 | 0.0248 |
+| FF++ | test | 1126 | 1.0000 | 1.0000 | 1.0000 | 0.0261 |
+| **Held-out set** | **held out** | 53 | **0.8150** | **0.7876** | **0.8437** | 0.5313 |
+
+<details>
+<summary>Confusion matrices & per-class metrics</summary>
+
+**FAIGC (test)** — fake: acc=0.9646, f1=0.9789 | real: acc=0.9859, f1=0.9539
+
+|  | pred fake | pred real |
+|---|---:|---:|
+| **fake** | 1415 | 52 |
+| **real** | 9 | 631 |
+
+**CelebDF (test)** — fake: acc=1.0000, f1=0.9974 | real: acc=0.9952, f1=0.9976
+
+|  | pred fake | pred real |
+|---|---:|---:|
+| **fake** | 756 | 0 |
+| **real** | 4 | 830 |
+
+**FF++ (test)** — fake: acc=1.0000, f1=1.0000 | real: acc=1.0000, f1=1.0000
+
+|  | pred fake | pred real |
+|---|---:|---:|
+| **fake** | 529 | 0 |
+| **real** | 0 | 597 |
+
+**Held-out set** — fake: acc=0.7353, f1=0.8197 | real: acc=0.8947, f1=0.7556
+
+|  | pred fake | pred real |
+|---|---:|---:|
+| **fake** | 25 | 9 |
+| **real** | 2 | 17 |
+
+</details>
+
+**Caveat — same-source/actor overlap in test splits.** The 70/15/15 split is done at the *video* level, not at the source-video/actor level. In FF++ and CelebDF every fake is derived from a real source video, so fakes of the same source — and other videos of the same actor — end up in both train and test. The near-perfect FF++/CelebDF test numbers may therefore be inflated; **the held-out set (0.815 acc / 0.844 AUROC) is the honest estimate of generalization**.
+
 ## Repository structure
 
 ```
@@ -513,6 +571,21 @@ If you use this repository, please cite the project page or contact the author d
 - Каждая модель показывает высокие результаты на своём домене (0.83–0.93 accuracy).
 - Кросс-доменная генерализация слабая для одиночных датасетов — артефакты VCDF-X и CelebDF существенно отличаются от FF++.
 - **Обучение на смеси** (FF++ + CelebDF + VCDF-X) даёт наилучшую генерализацию: 0.81 / 0.97 / 0.91 по accuracy и 0.94 / 0.998 / 0.975 по AUROC.
+
+## exp_120626 — DF-бэкбоны, обучение на смеси (FAIGC + CelebDF + FF++)
+
+Чекпоинт `experimental_results/exp_120626/best-epoch=08-val_auc=0.8485.ckpt`, конфиг `src/experiments/base_config.yml` (DF-бэкбоны: DeepFakesON-Phys rPPG + ME-GraphAU swin-tiny FAU, `num_frames=64`, `num_queries=64`).
+
+Оценка на test-сплите (`evaluate.py -d ... -s test -od {1..3}` точно воспроизводит сплит обучения: тот же порядок датасетов, seed=42, поэтому test не пересекается с train), плюс **отложенная выборка**, не участвовавшая в обучении (проверено: ноль совпадений sha256 между её 53 видео и всеми 32 150 обучающими видео; другие пулы исходников и генераторы):
+
+| Датасет | Сплит | N | Accuracy | F1 (macro) | AUROC | Loss |
+|---|---|---:|:---:|:---:|:---:|:---:|
+| FAIGC | test | 2107 | 0.9752 | 0.9664 | 0.9974 | 0.0758 |
+| CelebDF | test | 1590 | 0.9976 | 0.9975 | 1.0000 | 0.0248 |
+| FF++ | test | 1126 | 1.0000 | 1.0000 | 1.0000 | 0.0261 |
+| **Отложенная выборка** | **отложенная** | 53 | **0.8150** | **0.7876** | **0.8437** | 0.5313 |
+
+**Оговорка — пересечение по исходникам/актёрам в test-сплитах.** Сплит 70/15/15 делается на уровне *видео*, а не исходного видео/актёра. В FF++ и CelebDF каждый фейк порождён реальным исходным видео, поэтому фейки одного исходника — и другие видео того же актёра — попадают и в train, и в test. Почти идеальные цифры на FF++/CelebDF могут быть из-за этого завышены; **честная оценка генерализации — отложенная выборка (0.815 acc / 0.844 AUROC)**.
 
 ## Структура репозитория
 
