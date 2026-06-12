@@ -14,7 +14,6 @@ from src.data.dataset import VideoFolderDataset
 from src.data.meta_dataset import MetaVideoDataset
 from src.data.transforms import VideoTransform
 from src.data.processor import FaceDetector, Processor
-from src.data.split import concat_cluster_split
 
 from torchmetrics.classification import (
     MulticlassConfusionMatrix,
@@ -152,27 +151,30 @@ def evaluate(
         class_names = getattr(datasets[0], "classes", None)
 
     elif dataset_paths:
-        typer.echo(f"Режим: cluster split (воспроизведение train.py, split={split})")
-        source_datasets, mirror_datasets = [], []
+        typer.echo(f"Режим: random split 70/15/15, seed=42 (воспроизведение train.py, split={split})")
+        datasets = []
         for path in dataset_paths:
             if os.path.exists(path):
                 typer.echo(f"  Загрузка: {path}")
-                source_datasets.append(VideoFolderDataset(path, video_transform=val_transform, frames_per_video=num_frames))
-                mirror_datasets.append(VideoFolderDataset(path, video_transform=val_transform, frames_per_video=num_frames))
+                datasets.append(VideoFolderDataset(path, video_transform=val_transform, frames_per_video=num_frames))
             else:
                 typer.echo(f"  Пропуск (не найден): {path}")
-        if not source_datasets:
+        if not datasets:
             raise Exception("Ни один датасет не загружен.")
-        class_names = getattr(source_datasets[0], "classes", None)
+        class_names = getattr(datasets[0], "classes", None)
 
-        typer.echo("Запуск KMeans cluster split...")
-        _, val_idx, test_idx = concat_cluster_split(
-            source_datasets, n_clusters=3, seed=42, n_feature_frames=4,
-            processor=val_transform,
-        )
+        full_dataset = ConcatDataset(datasets)
+        N = len(full_dataset)
+        g = torch.Generator().manual_seed(42)
+        perm = torch.randperm(N, generator=g).tolist()
+        n_tr = int(0.7 * N)
+        n_va = int(0.15 * N)
+        val_idx  = perm[n_tr:n_tr + n_va]
+        test_idx = perm[n_tr + n_va:]
+
         indices = val_idx if split == "val" else test_idx
-        eval_ds = Subset(ConcatDataset(mirror_datasets), indices)
-        typer.echo(f"Split={split} → {len(eval_ds)} примеров")
+        eval_ds = Subset(full_dataset, indices)
+        typer.echo(f"Split={split} → {len(eval_ds)} примеров (из {N} всего)")
 
     else:
         raise typer.BadParameter("Укажите -d, -ed или -mc")
