@@ -67,7 +67,12 @@ def evaluate(
     gender_col: Optional[str] = typer.Option("gender", "--gender_col"),
     ethnicity_col: Optional[str] = typer.Option("ethnicity", "--ethnicity_col"),
     emotion_col: Optional[str] = typer.Option("emotion", "--emotion_col"),
-    split: str = typer.Option("test", "--split", "-s", help="val или test (только для cluster split режима с -d)"),
+    split: str = typer.Option("test", "--split", "-s", help="val или test (только для режима с -d)"),
+    only_dataset: Optional[int] = typer.Option(
+        None, "--only_dataset", "-od",
+        help="Оставить из сплита только примеры N-го датасета из списка -d (нумерация с 1). "
+             "Все -d при этом нужно передать в том же порядке, что при обучении.",
+    ),
     batch_size: int = typer.Option(16, "--batch_size", "-bs"),
     num_workers: int = typer.Option(4, "--num_workers", "-nw"),
     save_path: Optional[str] = typer.Option(None, "--save_path", "-o", help="Сохранить результаты в JSON"),
@@ -152,13 +157,15 @@ def evaluate(
 
     elif dataset_paths:
         typer.echo(f"Режим: random split 70/15/15, seed=42 (воспроизведение train.py, split={split})")
-        datasets = []
+        datasets, loaded_paths = [], []
         for path in dataset_paths:
             if os.path.exists(path):
                 typer.echo(f"  Загрузка: {path}")
                 datasets.append(VideoFolderDataset(path, video_transform=val_transform, frames_per_video=num_frames))
+                loaded_paths.append(path)
             else:
-                typer.echo(f"  Пропуск (не найден): {path}")
+                # Пропуск папки меняет конкатенацию → сплит перестаёт совпадать с train.py
+                raise Exception(f"Датасет не найден: {path} — для воспроизведения сплита нужны все папки из обучения.")
         if not datasets:
             raise Exception("Ни один датасет не загружен.")
         class_names = getattr(datasets[0], "classes", None)
@@ -173,8 +180,19 @@ def evaluate(
         test_idx = perm[n_tr + n_va:]
 
         indices = val_idx if split == "val" else test_idx
+        typer.echo(f"Split={split} → {len(indices)} примеров (из {N} всего)")
+
+        if only_dataset is not None:
+            if not (1 <= only_dataset <= len(datasets)):
+                raise typer.BadParameter(f"--only_dataset должен быть от 1 до {len(datasets)}")
+            starts = [0]
+            for ds in datasets:
+                starts.append(starts[-1] + len(ds))
+            lo, hi = starts[only_dataset - 1], starts[only_dataset]
+            indices = [i for i in indices if lo <= i < hi]
+            typer.echo(f"Фильтр --only_dataset={only_dataset} ({loaded_paths[only_dataset - 1]}) → {len(indices)} примеров")
+
         eval_ds = Subset(full_dataset, indices)
-        typer.echo(f"Split={split} → {len(eval_ds)} примеров (из {N} всего)")
 
     else:
         raise typer.BadParameter("Укажите -d, -ed или -mc")
