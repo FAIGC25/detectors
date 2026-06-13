@@ -11,7 +11,7 @@ from typing import List, Optional
 from collections import Counter
 from dotenv import load_dotenv
 from src.models.rppg_p_fau_df_lightning import FauRPPGDeepFakeRecognizerDF
-from src.data.dataset import VideoFolderDataset, split_dataset
+from src.data.dataset import VideoFolderDataset, split_dataset, grouped_split_indices
 from src.data.meta_dataset import MetaVideoDataset
 from src.data.transforms import VideoTransform
 from src.data.processor import FaceDetector, Processor
@@ -76,7 +76,13 @@ def train(
         "--val_dataset_path", "-vd",
         help="Пути к папкам с датасетами для val/test (если не указано — используется тренировочный)"
     ),
-    load_from_pretrain: Optional[str] = typer.Option(None, "--load_from_pretrain", "-r", help="Путь к .ckpt файлу для возобновления")
+    load_from_pretrain: Optional[str] = typer.Option(None, "--load_from_pretrain", "-r", help="Путь к .ckpt файлу для возобновления"),
+    legacy_split: bool = typer.Option(
+        False, "--legacy_split",
+        help="Сплит как до 2026-06-12: несортированный os.walk + randperm по файлам. "
+             "Аугментации одного ролика могут попасть и в train, и в test (лик) — "
+             "только для воспроизведения старых экспериментов."
+    ),
 ):
     """
     Запуск обучения модели FauRPPGDeepFakeRecognizerDF на нескольких датасетах.
@@ -226,15 +232,20 @@ def train(
         ]
         full_val_dataset = ConcatDataset(val_datasets_mirror)
 
-        typer.echo("🔀 Random split on CSV dataset (70/15/15)…")
         N = len(full_train_dataset)
-        g = torch.Generator().manual_seed(42)
-        perm = torch.randperm(N, generator=g).tolist()
-        n_tr = int(0.7 * N)
-        n_va = int(0.15 * N)
-        train_idx = perm[:n_tr]
-        val_idx   = perm[n_tr:n_tr + n_va]
-        test_idx  = perm[n_tr + n_va:]
+        if legacy_split:
+            typer.echo("🔀 Random split on CSV dataset (70/15/15, legacy: по файлам)…")
+            g = torch.Generator().manual_seed(42)
+            perm = torch.randperm(N, generator=g).tolist()
+            n_tr = int(0.7 * N)
+            n_va = int(0.15 * N)
+            train_idx = perm[:n_tr]
+            val_idx   = perm[n_tr:n_tr + n_va]
+            test_idx  = perm[n_tr + n_va:]
+        else:
+            typer.echo("🔀 Grouped split on CSV dataset (70/15/15): аугментации одного ролика не разделяются…")
+            all_paths = [p for ds in train_datasets for p, _ in ds.samples]
+            train_idx, val_idx, test_idx = grouped_split_indices(all_paths, seed=42)
 
         train_ds = Subset(full_train_dataset, train_idx)
         val_ds   = Subset(full_val_dataset,   val_idx)
@@ -247,7 +258,7 @@ def train(
         for path in dataset_paths:
             if os.path.exists(path):
                 typer.echo(f"📦 Загрузка тренировочного датасета из: {path}")
-                train_datasets.append(VideoFolderDataset(path, video_transform=train_transform, frames_per_video=num_frames))
+                train_datasets.append(VideoFolderDataset(path, video_transform=train_transform, frames_per_video=num_frames, sort_files=not legacy_split))
             else:
                 typer.echo(f"⚠️ Путь не найден и будет пропущен: {path}")
 
@@ -264,7 +275,7 @@ def train(
             for path in val_dataset_paths:
                 if os.path.exists(path):
                     typer.echo(f"📦 Загрузка val/test датасета из: {path}")
-                    val_datasets.append(VideoFolderDataset(path, video_transform=val_transform, frames_per_video=num_frames))
+                    val_datasets.append(VideoFolderDataset(path, video_transform=val_transform, frames_per_video=num_frames, sort_files=not legacy_split))
                 else:
                     typer.echo(f"⚠️ Путь не найден и будет пропущен: {path}")
 
@@ -279,19 +290,24 @@ def train(
             typer.echo(f"Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
         else:
             full_val_dataset = ConcatDataset([
-                VideoFolderDataset(path, video_transform=val_transform, frames_per_video=num_frames)
+                VideoFolderDataset(path, video_transform=val_transform, frames_per_video=num_frames, sort_files=not legacy_split)
                 for path in dataset_paths if os.path.exists(path)
             ])
 
-            typer.echo("🔀 Random split (70/15/15)…")
             N = len(full_train_dataset)
-            g = torch.Generator().manual_seed(42)
-            perm = torch.randperm(N, generator=g).tolist()
-            n_tr = int(0.7 * N)
-            n_va = int(0.15 * N)
-            train_idx = perm[:n_tr]
-            val_idx   = perm[n_tr:n_tr + n_va]
-            test_idx  = perm[n_tr + n_va:]
+            if legacy_split:
+                typer.echo("🔀 Random split (70/15/15, legacy: по файлам)…")
+                g = torch.Generator().manual_seed(42)
+                perm = torch.randperm(N, generator=g).tolist()
+                n_tr = int(0.7 * N)
+                n_va = int(0.15 * N)
+                train_idx = perm[:n_tr]
+                val_idx   = perm[n_tr:n_tr + n_va]
+                test_idx  = perm[n_tr + n_va:]
+            else:
+                typer.echo("🔀 Grouped split (70/15/15): аугментации одного ролика не разделяются…")
+                all_paths = [p for ds in train_datasets for p, _ in ds.samples]
+                train_idx, val_idx, test_idx = grouped_split_indices(all_paths, seed=42)
 
             train_ds = Subset(full_train_dataset, train_idx)
             val_ds   = Subset(full_val_dataset,   val_idx)

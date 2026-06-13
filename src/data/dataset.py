@@ -53,14 +53,64 @@ class RecursiveFolderDataset(Dataset):
 
 
 
+def grouped_split_indices(paths, train_ratio=0.7, val_ratio=0.15, seed=42):
+    """Сплит 70/15/15, не разрывающий группы вариантов одного ролика.
+
+    Файлы вида ``X.mp4`` / ``X_blur_compression.mp4`` / ``X_brightness_gamma.mp4``
+    считаются одним исходным роликом и целиком попадают в одну часть сплита.
+    Группа определяется по стему имени: если стем файла продолжает через '_'
+    стем другого существующего файла, оба сводятся к общему базовому стему.
+
+    Returns (train_idx, val_idx, test_idx).
+    """
+    stems = [os.path.splitext(os.path.basename(p))[0] for p in paths]
+    stem_set = set(stems)
+
+    def base_of(stem):
+        reduced = True
+        while reduced:
+            reduced = False
+            for i in range(len(stem) - 1, 0, -1):
+                if stem[i] == "_" and stem[:i] in stem_set:
+                    stem = stem[:i]
+                    reduced = True
+                    break
+        return stem
+
+    groups = {}
+    for i, s in enumerate(stems):
+        groups.setdefault(base_of(s), []).append(i)
+
+    keys = sorted(groups)
+    g = torch.Generator().manual_seed(seed)
+    order = torch.randperm(len(keys), generator=g).tolist()
+
+    n_tr = int(train_ratio * len(paths))
+    n_va = int(val_ratio * len(paths))
+    train_idx, val_idx, test_idx = [], [], []
+    for k in order:
+        bucket = groups[keys[k]]
+        if len(train_idx) < n_tr:
+            train_idx.extend(bucket)
+        elif len(val_idx) < n_va:
+            val_idx.extend(bucket)
+        else:
+            test_idx.extend(bucket)
+    return train_idx, val_idx, test_idx
+
+
 class VideoFolderDataset(Dataset):
     def __init__(self, root_dir, transform=None, video_transform=None,
-                 valid_extensions=('.mp4', '.avi', '.mov', '.mkv'), frames_per_video=32):
+                 valid_extensions=('.mp4', '.avi', '.mov', '.mkv'), frames_per_video=32,
+                 sort_files=True):
         self.root_dir = root_dir
         self.transform = transform
         self.video_transform = video_transform
         self.valid_extensions = valid_extensions
         self.frames_per_video = frames_per_video
+        # sort_files=False — порядок os.walk как до 2026-06-12, нужен только
+        # для воспроизведения сплита старых чекпоинтов (--legacy_split).
+        self.sort_files = sort_files
 
         self.samples = []
         self.classes = []
@@ -73,7 +123,10 @@ class VideoFolderDataset(Dataset):
             self.class_to_idx[class_name] = idx
             class_folder = os.path.join(root_dir, class_name)
 
-            for root, _, files in os.walk(class_folder):
+            for root, dirs, files in os.walk(class_folder):
+                if self.sort_files:
+                    dirs.sort()
+                    files = sorted(files)
                 for file in files:
                     if file.lower().endswith(self.valid_extensions):
                         path = os.path.join(root, file)

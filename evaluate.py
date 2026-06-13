@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, ConcatDataset, Subset
 
 #from src.models.rppg_p_fau_lightning import FauRPPGDeepFakeRecognizer
 from src.models.rppg_p_fau_df_lightning import FauRPPGDeepFakeRecognizerDF
-from src.data.dataset import VideoFolderDataset
+from src.data.dataset import VideoFolderDataset, grouped_split_indices
 from src.data.meta_dataset import MetaVideoDataset
 from src.data.transforms import VideoTransform
 from src.data.processor import FaceDetector, Processor
@@ -77,6 +77,12 @@ def evaluate(
     num_workers: int = typer.Option(4, "--num_workers", "-nw"),
     save_path: Optional[str] = typer.Option(None, "--save_path", "-o", help="Сохранить результаты в JSON"),
     no_face_detector: bool = typer.Option(False, "--no_face_detector", help="Отключить MTCNN-детектор лиц в препроцессинге (для чекпоинтов, обученных без него)"),
+    legacy_split: bool = typer.Option(
+        False, "--legacy_split",
+        help="Сплит как до 2026-06-12: несортированный os.walk + randperm по файлам. "
+             "Обязателен для чекпоинтов, обученных старым train.py (например exp_120626), "
+             "иначе сплит не совпадёт с обучением."
+    ),
 ):
     """
     Evaluate a trained FauRPPGDeepFakeRecognizer.
@@ -156,12 +162,13 @@ def evaluate(
         class_names = getattr(datasets[0], "classes", None)
 
     elif dataset_paths:
-        typer.echo(f"Режим: random split 70/15/15, seed=42 (воспроизведение train.py, split={split})")
+        mode_name = "random split по файлам (legacy)" if legacy_split else "grouped split (аугментации одного ролика не разделяются)"
+        typer.echo(f"Режим: {mode_name} 70/15/15, seed=42 (воспроизведение train.py, split={split})")
         datasets, loaded_paths = [], []
         for path in dataset_paths:
             if os.path.exists(path):
                 typer.echo(f"  Загрузка: {path}")
-                datasets.append(VideoFolderDataset(path, video_transform=val_transform, frames_per_video=num_frames))
+                datasets.append(VideoFolderDataset(path, video_transform=val_transform, frames_per_video=num_frames, sort_files=not legacy_split))
                 loaded_paths.append(path)
             else:
                 # Пропуск папки меняет конкатенацию → сплит перестаёт совпадать с train.py
@@ -172,12 +179,16 @@ def evaluate(
 
         full_dataset = ConcatDataset(datasets)
         N = len(full_dataset)
-        g = torch.Generator().manual_seed(42)
-        perm = torch.randperm(N, generator=g).tolist()
-        n_tr = int(0.7 * N)
-        n_va = int(0.15 * N)
-        val_idx  = perm[n_tr:n_tr + n_va]
-        test_idx = perm[n_tr + n_va:]
+        if legacy_split:
+            g = torch.Generator().manual_seed(42)
+            perm = torch.randperm(N, generator=g).tolist()
+            n_tr = int(0.7 * N)
+            n_va = int(0.15 * N)
+            val_idx  = perm[n_tr:n_tr + n_va]
+            test_idx = perm[n_tr + n_va:]
+        else:
+            all_paths = [p for ds in datasets for p, _ in ds.samples]
+            _, val_idx, test_idx = grouped_split_indices(all_paths, seed=42)
 
         indices = val_idx if split == "val" else test_idx
         typer.echo(f"Split={split} → {len(indices)} примеров (из {N} всего)")
