@@ -6,6 +6,78 @@
 
 ---
 
+## Quickstart — inference (`run.py`)
+
+`run.py` takes a checkpoint and a path, runs the model, and writes one JSON object per video to a JSONL file.
+
+**Label mapping (from the training folder names, sorted alphabetically): `fake = 0`, `real = 1`.**
+
+Run on a folder of videos (scanned recursively):
+
+```bash
+uv run run.py \
+    -ckpt experimental_results/exp_120626/best-epoch=08-val_auc=0.8485.ckpt \
+    -c src/experiments/base_config.yml \
+    -d /path/to/videos \
+    -o predictions.jsonl
+```
+
+Run on a single video file (just point `-d` at the file):
+
+```bash
+uv run run.py \
+    -ckpt experimental_results/exp_120626/best-epoch=08-val_auc=0.8485.ckpt \
+    -d /path/to/clip.mp4 \
+    -o prediction.jsonl
+```
+
+Options: `-c` config (default `src/experiments/base_config.yml`), `-bs` batch size (default 8), `-nw` workers (default 4), `--no_face_detector` to disable the MTCNN face crop. CUDA is used automatically if available, otherwise CPU.
+
+Output — one JSON object per line:
+
+```json
+{"video": "clip_001.mp4", "label": "fake", "label_id": 0, "prob": 0.97, "probs": {"fake": 0.97, "real": 0.03}}
+```
+
+`video` is the path relative to `-d`, `label`/`label_id` is the predicted class, `prob` is its probability, `probs` holds the full per-class distribution. Frame sampling is deterministic (centered clip), so the same input always yields the same prediction.
+
+## Быстрый старт — инференс (`run.py`)
+
+`run.py` принимает чекпоинт и путь, прогоняет модель и пишет по одному JSON-объекту на видео в JSONL-файл.
+
+**Маппинг меток (из имён папок обучения, отсортированных по алфавиту): `fake = 0`, `real = 1`.**
+
+Запуск на папке с видео (сканируется рекурсивно):
+
+```bash
+uv run run.py \
+    -ckpt experimental_results/exp_120626/best-epoch=08-val_auc=0.8485.ckpt \
+    -c src/experiments/base_config.yml \
+    -d /path/to/videos \
+    -o predictions.jsonl
+```
+
+Запуск на одном видеофайле (просто укажите файл в `-d`):
+
+```bash
+uv run run.py \
+    -ckpt experimental_results/exp_120626/best-epoch=08-val_auc=0.8485.ckpt \
+    -d /path/to/clip.mp4 \
+    -o prediction.jsonl
+```
+
+Опции: `-c` конфиг (по умолчанию `src/experiments/base_config.yml`), `-bs` размер батча (по умолчанию 8), `-nw` воркеры (по умолчанию 4), `--no_face_detector` — отключить кроп лица MTCNN. CUDA используется автоматически при наличии, иначе CPU.
+
+Формат вывода — по одному JSON-объекту на строку:
+
+```json
+{"video": "clip_001.mp4", "label": "fake", "label_id": 0, "prob": 0.97, "probs": {"fake": 0.97, "real": 0.03}}
+```
+
+`video` — путь относительно `-d`, `label`/`label_id` — предсказанный класс, `prob` — его вероятность, `probs` — полное распределение по классам. Сэмплирование кадров детерминированное (клип из центра ролика), поэтому один и тот же вход всегда даёт одно и то же предсказание.
+
+---
+
 ## English
 
 Research repository for **multimodal deepfake detection**. The model jointly leverages:
@@ -314,6 +386,8 @@ Evaluation on the test split (`evaluate.py -d ... -s test -od {1..3}` reproduces
 
 **Caveat — train/test content overlap in test splits.** The 70/15/15 split is done at the *file* level, while the datasets store several augmented variants of the same source clip as separate files. Measured on the exact reproduced split (seed=42): **34.1% of test videos are augmented copies of train videos** — VCDF-X 10.3%, CelebDF 52.5%, FF++ 52.8%. On top of that, fakes of the same source video / actor end up in both train and test. The near-perfect FF++/CelebDF test numbers are therefore inflated; **the held-out set (0.815 acc / 0.844 AUROC) is the honest estimate of generalization**.
 
+Fixed since 2026-06-12: `train.py`/`evaluate.py` now use a **grouped split** by default — all variants of the same source clip stay on one side of the split, and file traversal is sorted (deterministic across filesystems). Checkpoints trained before the fix must be evaluated with `--legacy_split`.
+
 ## Repository structure
 
 ```
@@ -586,6 +660,8 @@ If you use this repository, please cite the project page or contact the author d
 | **Отложенная выборка** | **отложенная** | 53 | **0.8150** | **0.7876** | **0.8437** | 0.5313 |
 
 **Оговорка — пересечение контента train/test в test-сплитах.** Сплит 70/15/15 делается на уровне *файлов*, а в датасетах аугментированные варианты одного исходного ролика лежат отдельными файлами. Измерено на точно воспроизведённом сплите (seed=42): **34.1% test-видео — аугментированные копии train-видео** (VCDF-X 10.3%, CelebDF 52.5%, FF++ 52.8%). Поверх этого фейки одного исходника/актёра попадают и в train, и в test. Почти идеальные цифры на FF++/CelebDF из-за этого завышены; **честная оценка генерализации — отложенная выборка (0.815 acc / 0.844 AUROC)**.
+
+Исправлено с 2026-06-12: `train.py`/`evaluate.py` по умолчанию используют **групповой сплит** — все варианты одного исходного ролика остаются по одну сторону сплита, обход файлов отсортирован (детерминирован между файловыми системами). Чекпоинты, обученные до исправления, оценивать с `--legacy_split`.
 
 ## Структура репозитория
 
