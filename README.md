@@ -16,7 +16,7 @@ Run on a folder of videos (scanned recursively):
 
 ```bash
 uv run run.py \
-    -ckpt experimental_results/exp_120626/best-epoch=08-val_auc=0.8485.ckpt \
+    -ckpt path/to/checkpoint.ckpt \
     -c src/experiments/base_config.yml \
     -d /path/to/videos \
     -o predictions.jsonl
@@ -26,7 +26,7 @@ Run on a single video file (just point `-d` at the file):
 
 ```bash
 uv run run.py \
-    -ckpt experimental_results/exp_120626/best-epoch=08-val_auc=0.8485.ckpt \
+    -ckpt path/to/checkpoint.ckpt \
     -d /path/to/clip.mp4 \
     -o prediction.jsonl
 ```
@@ -51,7 +51,7 @@ Output — one JSON object per line:
 
 ```bash
 uv run run.py \
-    -ckpt experimental_results/exp_120626/best-epoch=08-val_auc=0.8485.ckpt \
+    -ckpt path/to/checkpoint.ckpt \
     -c src/experiments/base_config.yml \
     -d /path/to/videos \
     -o predictions.jsonl
@@ -61,7 +61,7 @@ uv run run.py \
 
 ```bash
 uv run run.py \
-    -ckpt experimental_results/exp_120626/best-epoch=08-val_auc=0.8485.ckpt \
+    -ckpt path/to/checkpoint.ckpt \
     -d /path/to/clip.mp4 \
     -o prediction.jsonl
 ```
@@ -128,11 +128,27 @@ Trained and evaluated on three public deepfake datasets:
 | **CelebDF** (Celeb-DeepFake) | High-quality celebrity deepfake videos |
 | **VCDF-X** | AI-generated face content |
 
-Data split: KMeans cluster split (k=3) on face crop color histograms — train/val/test clusters are assigned by maximum centroid distance.
+Preprocessing crops faces with an MTCNN detector; the train/val/test split is a random 70/15/15 (`seed=42`). See **Results** below for the split caveat (and the grouped-split fix), and for how the current model differs from the first results.
 
-## Ablation Study — Cross-Dataset Evaluation
+## Results — how to read this section
 
-Models trained on one dataset and evaluated on all three. Metrics on the val split (seed=42).
+This repository reports results from **two different training pipelines**. Please read this before looking at the tables.
+
+**1. Current model — the one delivered for testing.** A deepfake-pretrained rPPG encoder (DeepFakesON-Phys) + ME-GraphAU FAU branch, trained jointly on a **mix** of FF++ + CelebDF + VCDF-X. This is the relevant model (section *Current model* below).
+
+- Its in-domain **test-split** numbers (FF++ / CelebDF / VCDF-X) look near-perfect (0.97–1.00 AUROC) but are **optimistic because of a data-split issue**: each dataset stores augmented variants of the same clip as separate files, and a file-level split placed some of these copies in both train and test (measured: 34% of all test clips, up to ~53% on CelebDF and FF++). Treat these as an *upper bound*, not as accuracy on unseen data.
+- The **honest** number comes from a fully **held-out set** (53 videos, verified by content hashing to share nothing with the training data, produced by different generators): **0.815 accuracy / 0.844 AUROC**. This is the realistic expectation on new, unseen videos.
+- The split issue is already fixed for future training (grouped split); details in the *Current model* section.
+
+**2. Legacy ablation — older pipeline, qualitative only.** Single-dataset training, cross-dataset evaluation, on an earlier training/split pipeline and the **validation** split. Keep it only as **motivation**: it shows that a model trained on a single dataset does **not** generalize to the others — which is exactly why the current model is trained on a mix. **Do not compare these numbers head-to-head with the current model** (different pipeline, different split, validation not test).
+
+> **Bottom line for whoever evaluates the model:** expect performance around the held-out figures (**~0.82 accuracy / ~0.84 AUROC**) on genuinely unseen data. The near-1.0 in-domain numbers are inflated and should not be used as the expected accuracy.
+
+## Legacy ablation — single-dataset cross-evaluation
+
+> ⚠️ **First results, older pipeline — qualitative motivation only.** These are the initial cross-dataset numbers (added in commit `b04112f`, 2026-03-30). They come from an early pipeline that differs substantially from the current model — **no face-detector crop** (frames used as-is), original (non-deepfake-pretrained) backbones, fewer frames per clip, no contrastive / memory-bank loss — and they report the **validation** split (`seed=42`). Do not compare the absolute values with the current model (see *Current model* → *What changed* below). What matters here is the *pattern*, not the values: a single-dataset model collapses on the other two (the off-diagonal cells), which motivates mixed training.
+
+Each model is trained on one dataset and evaluated on all three.
 
 ### Accuracy
 
@@ -328,9 +344,17 @@ Per-class: fake acc=0.9338, f1=0.9436 | real acc=0.8924, f1=0.8711
 
 </details>
 
-## exp_120626 — DF backbones, Mix training (VCDF-X + CelebDF + FF++)
+## Current model — mixed training
 
-Checkpoint `experimental_results/exp_120626/best-epoch=08-val_auc=0.8485.ckpt`, config `src/experiments/base_config.yml` (DF backbones: DeepFakesON-Phys rPPG + ME-GraphAU swin-tiny FAU, `num_frames=64`, `num_queries=64`).
+**This is the model delivered for testing.** Trained jointly on a mix of VCDF-X + CelebDF + FF++; the rPPG branch uses a deepfake-pretrained encoder (DeepFakesON-Phys) and the FAU branch uses ME-GraphAU (Swin-Tiny). Config `src/experiments/base_config.yml` (`num_frames=64`, `num_queries=64`).
+
+**What changed since the first results (commit `b04112f`).** The improvement over the legacy ablation came from the combination of:
+
+- **Deepfake-pretrained rPPG encoder** — DeepFakesON-Phys (pretrained for deepfake detection) replaces the original PhysNet.
+- **MTCNN face-detector crop** added to preprocessing (frames were previously used as-is).
+- **Contrastive / metric learning with a memory bank** on the fused embedding (`metric_loss_type`, `memory_bank_size` in the config).
+- **More frames per clip** — `num_frames` 32 → 64.
+- **Mixed-dataset training** (FF++ + CelebDF + VCDF-X) plus other tuning.
 
 Training (folder mode, random 70/15/15 split, seed=42):
 
@@ -411,7 +435,7 @@ src/
     meta_dataset.py         # MetaVideoDataset — CSV-based multi-task loading
     transforms.py           # VideoTransform — consistent frame-level augmentations
     processor.py            # FaceDetector (MTCNN) + Processor pipeline
-    split.py                # KMeans cluster-based train/val/test split
+    split.py                # experimental split utility (unused)
   pooler/
     attn_pooler.py          # AttentionPooler — softmax-weighted aggregation
     base_pooler.py
@@ -548,7 +572,7 @@ Three evaluation modes:
 
 | Flag | Mode |
 |---|---|
-| `-d /path` | Reproduce cluster split from training, evaluate on `--split val\|test` |
+| `-d /path` | Reproduce the training split (grouped by default, or `--legacy_split`), evaluate on `--split val\|test` |
 | `-ed /path` | Evaluate the full dataset directly (no split) |
 | `-mc meta.csv` | Evaluate from a CSV file |
 
@@ -563,7 +587,7 @@ python evaluate.py ... -o results.json
 - This is a **research codebase**, not a production package.
 - Pretrained backbone weights are required for reproducible results.
 - Architecture diagram source: `docs/architecture.drawio`.
-- The cluster split is deterministic (seed=42) but depends on video content — re-splitting on a new machine may differ if video decoding differs.
+- The default grouped split is deterministic (seed=42) and sorts file traversal, so it reproduces across machines. Use `--legacy_split` only to reproduce checkpoints trained before the 2026-06-12 split fix.
 
 ## Citation
 
@@ -607,11 +631,27 @@ If you use this repository, please cite the project page or contact the author d
 | **CelebDF** (Celeb-DeepFake) | Высококачественные дипфейки знаменитостей |
 | **VCDF-X** | AI-генерированный контент с лицами |
 
-Разбиение: KMeans cluster split (k=3) по цветовым гистограммам кропов лица — train/val/test кластеры определяются максимальным расстоянием между центроидами.
+Препроцессинг кропает лица детектором MTCNN; train/val/test разбиение — случайное 70/15/15 (`seed=42`). См. раздел **Результаты** ниже про оговорку о сплите (и групповой сплит-фикс), а также чем текущая модель отличается от первых результатов.
 
-## Ablation Study — Кросс-датасетная оценка
+## Результаты — как читать этот раздел
 
-Модели обучены на одном датасете и протестированы на всех трёх. Метрики на val split (seed=42).
+В репозитории приведены результаты **двух разных пайплайнов обучения**. Прочитайте это перед таблицами.
+
+**1. Текущая модель — та, что отдаётся на тестирование.** Предобученный для детекции дипфейков rPPG-энкодер (DeepFakesON-Phys) + FAU-ветка ME-GraphAU, обучены совместно на **смеси** FF++ + CelebDF + VCDF-X. Это релевантная модель (раздел *Текущая модель* ниже).
+
+- Её in-domain цифры на **test-сплите** (FF++ / CelebDF / VCDF-X) выглядят почти идеально (0.97–1.00 AUROC), но **завышены из-за особенности сплита**: каждый датасет хранит аугментированные варианты одного ролика отдельными файлами, и файловый сплит поместил часть этих копий и в train, и в test (измерено: 34% всех test-роликов, до ~53% на CelebDF и FF++). Это *верхняя оценка*, а не точность на новых данных.
+- **Честная** цифра — на полностью **отложенной выборке** (53 видео, по хэшам содержимого проверено, что не пересекается с обучением, сделаны другими генераторами): **0.815 accuracy / 0.844 AUROC**. Это реалистичное ожидание на новых, невиданных видео.
+- Проблема сплита уже исправлена для будущего обучения (групповой сплит); детали в разделе *Текущая модель*.
+
+**2. Legacy-абляция — старый пайплайн, только качественно.** Обучение на одном датасете, кросс-датасетная оценка, на более раннем пайплайне обучения/сплита и на **валидационном** сплите. Оставлена только как **мотивация**: показывает, что модель, обученная на одном датасете, **не** генерализуется на другие — именно поэтому текущая модель обучается на смеси. **Не сравнивайте эти числа напрямую с текущей моделью** (другой пайплайн, другой сплит, val, а не test).
+
+> **Главное для того, кто оценивает модель:** ожидайте качество около отложенной выборки (**~0.82 accuracy / ~0.84 AUROC**) на действительно невиданных данных. Почти единичные in-domain цифры завышены и не должны использоваться как ожидаемая точность.
+
+## Legacy-абляция — кросс-оценка одно-датасетных моделей
+
+> ⚠️ **Первые результаты, старый пайплайн — только качественная мотивация.** Это исходные кросс-датасетные цифры (добавлены в коммите `b04112f`, 2026-03-30). Они с раннего пайплайна, который существенно отличается от текущей модели — **без кропа лица детектором** (кадры как есть), исходные (не предобученные для детекции дипфейков) бэкбоны, меньше кадров на ролик, без контрастного лосса и memory bank — и метрики на **валидационном** сплите (`seed=42`). Не сравнивайте абсолютные значения с текущей моделью (см. *Текущая модель* → *Что изменилось* ниже). Важен *паттерн*, а не числа: модель, обученная на одном датасете, проседает на двух других (внедиагональные ячейки), что и мотивирует смешанное обучение.
+
+Каждая модель обучена на одном датасете и оценена на всех трёх.
 
 ### Accuracy
 
@@ -646,9 +686,17 @@ If you use this repository, please cite the project page or contact the author d
 - Кросс-доменная генерализация слабая для одиночных датасетов — артефакты VCDF-X и CelebDF существенно отличаются от FF++.
 - **Обучение на смеси** (FF++ + CelebDF + VCDF-X) даёт наилучшую генерализацию: 0.81 / 0.97 / 0.91 по accuracy и 0.94 / 0.998 / 0.975 по AUROC.
 
-## exp_120626 — DF-бэкбоны, обучение на смеси (VCDF-X + CelebDF + FF++)
+## Текущая модель — обучение на смеси
 
-Чекпоинт `experimental_results/exp_120626/best-epoch=08-val_auc=0.8485.ckpt`, конфиг `src/experiments/base_config.yml` (DF-бэкбоны: DeepFakesON-Phys rPPG + ME-GraphAU swin-tiny FAU, `num_frames=64`, `num_queries=64`).
+**Это модель, которая отдаётся на тестирование.** Обучена совместно на смеси VCDF-X + CelebDF + FF++; rPPG-ветка использует предобученный для детекции дипфейков энкодер (DeepFakesON-Phys), FAU-ветка — ME-GraphAU (Swin-Tiny). Конфиг `src/experiments/base_config.yml` (`num_frames=64`, `num_queries=64`).
+
+**Что изменилось с первых результатов (коммит `b04112f`).** Прирост относительно legacy-абляции дала комбинация:
+
+- **Предобученный для детекции дипфейков rPPG-энкодер** — DeepFakesON-Phys вместо исходного PhysNet.
+- **Кроп лица детектором MTCNN** в препроцессинге (раньше кадры подавались как есть).
+- **Контрастное / метрическое обучение с memory bank** на слитом эмбеддинге (`metric_loss_type`, `memory_bank_size`).
+- **Больше кадров на ролик** — `num_frames` 32 → 64.
+- **Обучение на смеси датасетов** (FF++ + CelebDF + VCDF-X) и прочая настройка.
 
 Оценка на test-сплите (`evaluate.py -d ... -s test -od {1..3}` точно воспроизводит сплит обучения: тот же порядок датасетов, seed=42, поэтому test не пересекается с train), плюс **отложенная выборка**, не участвовавшая в обучении (проверено: ноль совпадений sha256 между её 53 видео и всеми 32 150 обучающими видео; другие пулы исходников и генераторы):
 
@@ -685,7 +733,7 @@ src/
     meta_dataset.py         # MetaVideoDataset — CSV-based мультизадачная загрузка
     transforms.py           # VideoTransform — согласованные аугментации
     processor.py            # FaceDetector (MTCNN) + Processor
-    split.py                # KMeans cluster split train/val/test
+    split.py                # экспериментальная утилита сплита (не используется)
   pooler/
     attn_pooler.py          # AttentionPooler — взвешенная агрегация
   loss/
@@ -815,7 +863,7 @@ python evaluate.py -c src/experiments/base_config.yml \
 
 | Флаг | Режим |
 |---|---|
-| `-d /path` | Воспроизводит cluster split из train.py, оценивает `--split val\|test` |
+| `-d /path` | Воспроизводит сплит обучения (по умолчанию групповой, или `--legacy_split`), оценивает `--split val\|test` |
 | `-ed /path` | Оценивает весь датасет без разбиения |
 | `-mc meta.csv` | Оценивает по CSV-файлу |
 
@@ -830,7 +878,7 @@ python evaluate.py ... -o results.json
 - Это **исследовательский код**, не production-пакет.
 - Предобученные веса backbone обязательны для воспроизводимых результатов.
 - Исходник диаграммы архитектуры: `docs/architecture.drawio`.
-- Cluster split детерминирован (seed=42), но зависит от декодирования видео — на другой машине результат может отличаться.
+- Групповой сплит по умолчанию детерминирован (seed=42) и сортирует обход файлов, поэтому воспроизводится между машинами. `--legacy_split` нужен только для воспроизведения чекпоинтов, обученных до исправления сплита 2026-06-12.
 
 ## Цитирование
 

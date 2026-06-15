@@ -3,7 +3,7 @@
 
 Пример:
     uv run run.py \
-        -ckpt experimental_results/exp_120626/best-epoch=08-val_auc=0.8485.ckpt \
+        -ckpt path/to/checkpoint.ckpt \
         -c src/experiments/base_config.yml \
         -d /path/to/videos \
         -o predictions.jsonl
